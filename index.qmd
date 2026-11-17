@@ -1,0 +1,386 @@
+---
+title: Tarea_3
+author: "Daniela Moya Víquez"
+lang: es
+format: html
+toc: true
+embed-resources: true
+---
+
+# 1. Indice de calor
+
+El índice de calor es la sensación térmica que experimenta el cuerpo humano al combinar la temperatura del aire y la humedad relativa. Para su determinación, se requieren dos variables principales (Decreto N.º 39147-S-TSS, 2015):
+
+1.  Temperatura del aire (en grados Celsius o Fahrenheit).
+2.  Humedad relativa (en porcentaje %).
+
+De conformidad con el estudio realizado por la Caja Costarricense de Seguro Social, denominado *"Factores Asociados a Enfermedad Renal Crónica, Región Chorotega año 2014"*, se concluye que en Costa Rica, la ERCnT tiende a ser mayor en hombres jóvenes que se dedican a trabajos físicos y se concentran en comunidades de la provincia de Guanacaste (Caja Costarricense de Seguro Social \[CCSS\], 2014).
+
+La enfermedad renal crónica de origen no tradicional (ERCnT) es una patología desencadenada principalmente por el estrés térmico ocupacional. Estudios recientes han demostrado cambios en la función renal y en los biomarcadores de hidratación en el curso de los turnos laborales, así como una disminución de la función renal relacionada con el calor y la carga de trabajo (Wesseling, 2020).
+
+Ante esta problemática de salud ocupacional, este documento permite estimar el **índice de calor** a nivel territorial utilizando la base de datos de WorldClim descargada mediante el paquete `geodata` de forma mensual (contiene 12 capas, una para cada mes del año). Cabe destacar que estos datos no corresponden a un año específico reciente, sino que representan una climatología histórica promedio calculada entre los años 1970 y 2000.
+
+WorldClim no proporciona la humedad relativa (HR) directamente, pero sí provee la presión de vapor real (*vap*), la cual, combinada con la temperatura máxima (*tmax*) y mínima (*tmin*), permite calcular la humedad relativa mediante una aproximación termodinámica estandarizada por la Organización Meteorológica Mundial (OMM).
+
+> *Nota metodológica: Dado que esta ecuación requiere constantes complejas y factores de corrección adicionales cuando la temperatura o la humedad alcanzan umbrales extremos, se delegó su ejecución algorítmica a la función `heat.index()` del paquete `weathermetrics`. Esta función automatiza el cálculo matemático garantizando precisión al convertir y procesar directamente los valores en grados Celsius.*
+
+## 1.1. Carga de paquetes
+
+```{r}
+#| label: carga-paquetes
+#| message: false
+#| warning: false
+
+library(sf)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(DT)
+library(weathermetrics)
+library(geodata)
+```
+
+## 1.2. Directorio de datos en el repositorio del curso
+
+```{r}
+#| label: carga-datos-territorio
+
+# Cargar geometrías base en WGS84
+
+datos <- "https://raw.githubusercontent.com/pf0953-programacionr/2026-ii/main/datos/"
+cantones <- st_read(paste0(datos, "cantones.gpkg"), quiet = TRUE) |> 
+  st_transform(4326)
+provincias <- st_read(paste0(datos, "provincias.gpkg"), quiet = TRUE) |> 
+  st_transform(4326)
+```
+
+## 1.3.Descarga de datos del clima para Costa Rica
+
+```{r}
+#| label: carga-datos-clima
+
+# Descarga GLOBAL 
+ruta_clima <- "datos_clima"
+dir.create(ruta_clima, showWarnings = FALSE)
+
+tmax_global <- worldclim_global(var = "tmax", res = 2.5, path = ruta_clima)
+tmin_global <- worldclim_global(var = "tmin", res = 2.5, path = ruta_clima)
+vap_global  <- worldclim_global(var = "vapr", res = 2.5, path = ruta_clima)
+```
+
+## 1.4. Recortar a Costa Rica
+
+```{r}
+#| label: recorte-cr
+
+# Recortar manualmente (crop) a la extensión de Costa Rica
+
+bbox_cr <- ext(-86.5, -82.0, 8.0, 11.5)
+
+tmax_cr <- crop(tmax_global, bbox_cr)
+tmin_cr <- crop(tmin_global, bbox_cr)
+vap_cr  <- crop(vap_global, bbox_cr)
+```
+
+## 1.5.Extracción espacial hacia polígonos
+
+```{r}
+#| label: cantones_vect
+
+# Extracción espacial 
+cantones_vect <- vect(cantones)
+
+# Extraemos las 12 capas mensuales
+temp_tmax <- extract(tmax_cr, cantones_vect, fun = mean, na.rm = TRUE)
+temp_tmin <- extract(tmin_cr, cantones_vect, fun = mean, na.rm = TRUE)
+temp_vap  <- extract(vap_cr, cantones_vect, fun = mean, na.rm = TRUE)
+```
+
+## 1.6. Nombrar los meses
+
+```{r}
+#| label: nom-meses
+
+# Quitar la columna ID y nombramos las columnas con los meses
+ext_tmax <- temp_tmax |> select(-ID)
+ext_tmin <- temp_tmin |> select(-ID)
+ext_vap  <- temp_vap |> select(-ID)
+
+meses <- c("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic")
+colnames(ext_tmax) <- paste0("Tmax_", meses)
+colnames(ext_tmin) <- paste0("Tmin_", meses)
+colnames(ext_vap)  <- paste0("Vap_", meses)
+
+```
+
+## 1.7. Base de datos final-mensual
+
+```{r}
+#| label: bd-final-mensual
+
+# Tabla (Tidy) quitando la geometría
+
+tabla_final_mensual <- cantones |>
+  st_drop_geometry() |> 
+  select(provincia, canton) |> 
+  bind_cols(ext_tmax, ext_tmin, ext_vap)
+
+```
+
+## 1.8 Importar datos desde el URL (BD:tabla_final_mensual)
+
+```{r}
+#| label: import-raw
+
+# Datos desde el RAW en GitHub
+
+url_datos <- "https://raw.githubusercontent.com/dani10movister-bot/tarea-02/refs/heads/main/clima_costa_rica_mensual.csv"
+datos_crudos <- read_csv(url_datos)
+```
+
+## Transformación de datos y estimación de variables termodinámicas
+
+```{r}
+#| label: transformacion-tidy
+#| message: false
+#| warning: false
+
+# Transformación y limpieza de datos (Tidy Data)
+datos_calor <- datos_crudos |>
+
+# Pasar de 12 columnas mensuales a filas, separando la variable del mes
+  pivot_longer(
+    cols = -c(provincia, canton),
+    names_to = c(".value", "Mes"),
+    names_sep = "_"
+  ) |>
+  
+# Filtrar los NA para que heat.index no colapse
+  filter(!is.na(Tmax) & !is.na(Vap)) |>
+
+# Cálculo de variables termodinámicas
+  mutate(T_Med = (Tmax + Tmin) / 2,
+    es = 0.6108 * exp((17.27 * T_Med) / (T_Med + 237.3)),
+    Humedad = (Vap / es) * 100,
+    Humedad = ifelse(Humedad > 100, 100, Humedad),
+    Indice_Calor = heat.index(t = T_Med, rh = Humedad, temperature.metric = "celsius", output.metric = "celsius", round = 1),
+    Mes = factor(Mes, levels = c("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic")))
+    
+```
+
+# 2. Análisis Territorial del IC
+
+El estrés térmico requiere un análisis que combine la dimensión temporal **(¿cuándo es más peligroso?)** y la dimensión territorial **(¿dónde es más peligroso?)**. A continuación, se presentan visualizaciones interactivas para responder ambas preguntas.
+
+## 2.1 Evolución Temporal
+
+Para identificar la ventana temporal de mayor vulnerabilidad, se agrupan los datos por mes y se calcula el Índice de Calor promedio a nivel nacional.
+
+## 2.1.1. Evolución Mensual del Índice de Calor: Meses Críticos de calor en Costa Rica
+
+```{r}
+#| label: grafico-evolucion-mensual
+#| message: false
+#| warning: false
+
+#  Preparación de datos (dplyr)
+resumen_mensual <- datos_calor |>
+  group_by(Mes) |>
+  summarize(
+    Indice_Promedio = round(mean(Indice_Calor, na.rm = TRUE), 1),
+    Hum_Promedio = round(mean(Humedad, na.rm = TRUE), 1)
+  )
+# Creación del gráfico base (ggplot2)
+g_lineas <- ggplot(resumen_mensual, aes(x = Mes, y = Indice_Promedio, group = 1)) +
+  geom_line(color = "firebrick", linewidth = 1) +
+  # Se añade 'text' para enriquecer la ventana emergente de plotly
+  geom_point(aes(text = paste("Humedad:", Hum_Promedio, "%")), color = "darkorange", size = 2.5) +
+  labs(
+    title = "Evolución Mensual del Índice de Calor (Promedio Nacional)",
+    x = "Mes del Año",
+    y = "Índice de Calor (°C)"
+  ) +
+  theme_minimal()
+
+# Convertir a gráfico interactivo (plotly)
+ggplotly(g_lineas, tooltip = c("x", "y", "text"))
+
+```
+
+Figura 1....
+
+Tal y como se observa en el gráfico 1, los meses de más peligro en Costa Rica para los colaboradores , principalmente los que trabajan en exteriores de acuerdo a la Evolución mensual de calor son los meses de marzo, abril y mayo, siendo abril el el mes con el Indice de calor (IC) más extremo.
+
+## 2.1.2. Dimensión territorial: Provincia más vulnerable según el ÍC
+
+```{r}
+#| label: grafico-provincias
+#| message: false
+#| warning: false
+
+# Agrupación y orden por provincia 
+resumen_provincia <- datos_calor |>
+  group_by(provincia) |>
+  summarize(Indice_Anual = round(mean(Indice_Calor, na.rm = TRUE), 1)) |>
+  arrange(desc(Indice_Anual)) |>
+  
+  # reorder(): ggplot ordena de mayor a menor
+  mutate(provincia = reorder(provincia, Indice_Anual))
+
+# Gráfico de barras horizontales
+g_barras <- ggplot(resumen_provincia, aes(x = Indice_Anual, y = provincia, fill = Indice_Anual)) +
+  geom_col() +
+  scale_fill_viridis_c(option = "magma", direction = -1) +
+  labs(
+    title = "Índice de Calor Promedio por Provincia",
+    x = "Índice de Calor (°C)",
+    y = ""
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Interactividad del gráfico
+ggplotly(g_barras, tooltip = c("x", "y"))
+
+```
+
+Gráfico 2.....
+
+El análisis territorial por provincias del Gráfico 2 permite observar que las regiones costeras y de bajura, particularmente en el Pacífico, concentran las condiciones termodinámicas más extremas, siendo Guanacaste la región más expuesta al peligro por exposición al calor.
+
+## 2.1.3. Relación Termodinámica (Temperatura vs. Humedad)
+
+Considerando que los umbrales oficiales de la OSHA (Administración de Seguridad y Salud Ocupacional), dictan que los colores cambian en los siguientes valores de Nivel de Riesgo de acuerdo al Índice de Calor:
+
+- Nivel I (Verde): Menor a 32.8 °C (Precaución).
+
+- Nivel II (Amarillo): 32.8 °C a 39.4 °C (Precaución extrema).
+
+- Nivel III (Naranja): 39.4 °C a 46.1 °C (Peligro).
+
+- Nivel IV (Rojo): Mayor a 46.1 °C (Peligro extremo).
+
+## 2.1.3.1. Asignación de Nivel de Riesgo del IC
+
+```{r}
+#| label: transformacion-tidy-2
+#| message: false
+#| warning: false
+
+datos_calor <- datos_crudos |>
+  pivot_longer(
+    cols = -c(provincia, canton),
+    names_to = c(".value", "Mes"),
+    names_sep = "_"
+  ) |>
+  filter(!is.na(Tmax) & !is.na(Vap)) |>
+  mutate(
+    
+# Usando T_Med solo para la fórmula termodinámica de humedad
+    T_Med = (Tmax + Tmin) / 2,
+    es = 0.6108 * exp((17.27 * T_Med) / (T_Med + 237.3)),
+    Humedad = (Vap / es) * 100,
+    Humedad = ifelse(Humedad > 100, 100, Humedad),
+    
+# Estimación del Nivel de Riesgo por IC usando la Tmax (jornada laboral diurna)
+    Indice_Calor = heat.index(t = Tmax, rh = Humedad, temperature.metric = "celsius", output.metric = "celsius", round = 1),
+    
+    Mes = factor(Mes, levels = c("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic")),
+    
+    # Clasificación OSHA con los datos corregidos
+    Nivel_Riesgo = cut(
+      Indice_Calor,
+      breaks = c(-Inf, 32.8, 39.4, 46.1, Inf),
+      labels = c("Nivel I", "Nivel II", "Nivel III", "Nivel IV"),
+      right = FALSE
+    )
+  )
+```
+
+## 2.1.3.1. Identificación del Nivel de Riesgo en un gráfico de dispersión
+
+```{r}
+#| label: fig-grafico-dispersion
+#| fig-cap: "Relacion termodinámica"
+#| message: false
+#| warning: false
+
+# Definir los colores exactos de la matriz OSHA
+colores_osha <- c(
+  "Nivel I" = "#9bc86e",   # Verde
+  "Nivel II" = "#fcf27c",  # Amarillo
+  "Nivel III" = "#eb7f35", # Naranja
+  "Nivel IV" = "#e33224"   # Rojo
+)
+
+# Gráfico de dispersión por categoría
+g_dispersion <- ggplot(datos_calor, aes(
+    x = T_Med, 
+    y = Humedad, 
+    color = Nivel_Riesgo, 
+    text = paste("Cantón:", canton, "<br>Índice:", Indice_Calor, "°C")
+  )) +
+  geom_point(alpha = 0.8, size = 2.5) +
+
+# Paleta de colores personalizada
+  scale_color_manual(values = colores_osha) +
+  labs(
+    title = "Relación Termodinámica y Niveles de Riesgo (OSHA)",
+    x = "Temperatura Media (°C)",
+    y = "Humedad Relativa (%)",
+    color = "Nivel de Riesgo"
+  ) +
+  theme_minimal()
+
+# Gráfico interactivo
+ggplotly(g_dispersion, tooltip = c("text", "x", "y"))
+
+```
+
+En @fig-grafico-dispersion
+
+## 2.1.4. Zonas de Intervención Prioritaria
+
+A continuación, se muestran los 15 cantones del país con más alto riesgo de estrés térmico por calor, y por tanto posiblemente vulnerables a la ERCnt.
+
+La siguiente tabla interactiva detalla los cantones donde la inspección y aplicación de los umbrales de seguridad establecidos por el CSO debe ser de carácter obligatorio, para velar por la salud de los colaboradores.
+
+```{r}
+#| label: tabla-cantones-prioritarios
+#| message: false
+#| warning: false
+
+# Resumen anual por cantón
+tabla_cantones_criticos <- datos_calor |>
+  group_by(canton, provincia) |>
+  summarize(
+    Temp_Media = round(mean(T_Med, na.rm = TRUE), 1),
+    Hum_Media = round(mean(Humedad, na.rm = TRUE), 1),
+    Indice_Anual = round(mean(Indice_Calor, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) |>
+  arrange(desc(Indice_Anual)) |>
+  # Seleccionar los 15 cantones más calientes (IC)
+  slice_head(n = 15) |>
+  rename(
+    Cantón = canton,
+    Provincia = provincia,
+    `T. Media (°C)` = Temp_Media,
+    `Humedad (%)` = Hum_Media,
+    `Índice (°C)` = Indice_Anual
+  )
+
+# Tabla interactiva con DT
+datatable(
+  tabla_cantones_criticos,
+  options = list(
+    pageLength = 10, 
+
+# Configuración idioma español
+    language = list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json')
+  ),
+  rownames = FALSE
+)
+```
