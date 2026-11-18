@@ -2,29 +2,60 @@
 title: Tarea_3
 author: "Daniela Moya Víquez"
 lang: es
-format: html
-toc: true
-embed-resources: true
+format: 
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+    code-summary: "Ver código"
+execute:
+  warning: false
 ---
 
-# 1. Indice de calor
+# 1. Introducción
 
-El índice de calor es la sensación térmica que experimenta el cuerpo humano al combinar la temperatura del aire y la humedad relativa. Para su determinación, se requieren dos variables principales (Decreto N.º 39147-S-TSS, 2015):
+## 1.1. Indice de calor
+
+El índice de calor es la sensación térmica que experimenta el cuerpo humano al combinar la temperatura del aire y la humedad relativa. Para estimarla, se requieren dos variables principales (Decreto N.º 39147-S-TSS, 2015):
 
 1.  Temperatura del aire (en grados Celsius o Fahrenheit).
 2.  Humedad relativa (en porcentaje %).
 
-De conformidad con el estudio realizado por la Caja Costarricense de Seguro Social, denominado *"Factores Asociados a Enfermedad Renal Crónica, Región Chorotega año 2014"*, se concluye que en Costa Rica, la ERCnT tiende a ser mayor en hombres jóvenes que se dedican a trabajos físicos y se concentran en comunidades de la provincia de Guanacaste (Caja Costarricense de Seguro Social \[CCSS\], 2014).
+De conformidad con el estudio realizado por la Caja Costarricense de Seguro Social, denominado *"Factores Asociados a Enfermedad Renal Crónica, Región Chorotega año 2014"*, se concluye que en Costa Rica, la ERCnT tiende a ser mayor en hombres jóvenes que se dedican a trabajos físicos y se concentran en comunidades de la provincia de Guanacaste (Caja Costarricense de Seguro Social [CCSS], 2014)
 
-La enfermedad renal crónica de origen no tradicional (ERCnT) es una patología desencadenada principalmente por el estrés térmico ocupacional. Estudios recientes han demostrado cambios en la función renal y en los biomarcadores de hidratación en el curso de los turnos laborales, así como una disminución de la función renal relacionada con el calor y la carga de trabajo (Wesseling, 2020).
+La enfermedad renal crónica de origen no tradicional (ERCnT) es una patología desencadenada principalmente por el estrés térmico ocupacional. Estudios recientes han demostrado cambios en la función renal y en los biomarcadores de hidratación en el curso de los turnos laborales, así como una disminución de la función renal relacionada con el calor y la carga de trabajo (Wesseling et al., 2020).
 
 Ante esta problemática de salud ocupacional, este documento permite estimar el **índice de calor** a nivel territorial utilizando la base de datos de WorldClim descargada mediante el paquete `geodata` de forma mensual (contiene 12 capas, una para cada mes del año). Cabe destacar que estos datos no corresponden a un año específico reciente, sino que representan una climatología histórica promedio calculada entre los años 1970 y 2000.
 
-WorldClim no proporciona la humedad relativa (HR) directamente, pero sí provee la presión de vapor real (*vap*), la cual, combinada con la temperatura máxima (*tmax*) y mínima (*tmin*), permite calcular la humedad relativa mediante una aproximación termodinámica estandarizada por la Organización Meteorológica Mundial (OMM).
+WorldClim no proporciona la humedad relativa (HR) directamente, pero sí provee la presión de vapor real (*vap*), la cual, combinada con la temperatura máxima (*tmax*) y mínima (*tmin*), permite calcular la humedad relativa mediante una aproximación termodinámica estandarizada por la Organización Meteorológica Mundial (OMM, s.f.).
 
 > *Nota metodológica: Dado que esta ecuación requiere constantes complejas y factores de corrección adicionales cuando la temperatura o la humedad alcanzan umbrales extremos, se delegó su ejecución algorítmica a la función `heat.index()` del paquete `weathermetrics`. Esta función automatiza el cálculo matemático garantizando precisión al convertir y procesar directamente los valores en grados Celsius.*
 
-## 1.1. Carga de paquetes
+## 1.2. Datos geoespaciales
+
+Se integraron los datos climáticos históricos de WorldClim (procesados previamente en formato tabular para extraer la temperatura máxima y la presión de vapor) con la capa vectorial de la división territorial administrativa de Costa Rica.
+
+Esta capa geoespacial corresponde a los cantones del país, generada oficialmente por el Instituto Geográfico Nacional (IGN) y disponible en el repositorio de datos del curso en formato GeoPackage. Desde el punto de vista técnico, la capa se describe de la siguiente manera:
+
+- **Geometría:** conformada por MultiPolígonos que delimitan las 84 entidades territoriales cantonales vigentes.
+- **Sistema de Referencia de Coordenadas (SRC):** su proyección nativa es **CRTM05 (EPSG:8908)**, el estándar cartográfico oficial de Costa Rica.
+- **Atributos principales:** contiene las columnas `provincia` y `canton`, las cuales resultan esenciales para funcionar como "llaves" durante la unión tabular (`left_join`) con la base de datos climatológica.
+
+**Preguntas a responder en este documento:**
+
+1.  ¿Cuándo es más peligroso?, meses del año con más exposición al calor en C.R.
+
+2.  ¿Dónde es más peligroso?, provincia con más exposción al calor en C.R.
+
+3.  ¿Cuál es el Nivel de Riesgo de todos los cantones del país?
+
+4.  ¿Cuáles son los 15 cantones más afectados a nivel nacional?
+
+5.  Ante esta problemática de salud ocupacional, se plantea la siguiente interrogante espacial: ¿En cuáles cantones de Costa Rica se concentran los niveles de riesgo de estrés térmico más severos (Niveles III y IV, según la categorización de la OSHA) durante las jornadas laborales diurnas?\*
+
+# 2. Importación y preparación de los datos
+
+## 2.1. Carga de paquetes
 
 ```{r}
 #| label: carga-paquetes
@@ -40,9 +71,10 @@ library(plotly)
 library(DT)
 library(weathermetrics)
 library(geodata)
+library(leaflet)
 ```
 
-## 1.2. Directorio de datos en el repositorio del curso
+## 2.2. Directorio de datos en el repositorio del curso
 
 ```{r}
 #| label: carga-datos-territorio
@@ -56,7 +88,7 @@ provincias <- st_read(paste0(datos, "provincias.gpkg"), quiet = TRUE) |>
   st_transform(4326)
 ```
 
-## 1.3.Descarga de datos del clima para Costa Rica
+## 2.3.Descarga de datos del clima para Costa Rica
 
 ```{r}
 #| label: carga-datos-clima
@@ -70,7 +102,7 @@ tmin_global <- worldclim_global(var = "tmin", res = 2.5, path = ruta_clima)
 vap_global  <- worldclim_global(var = "vapr", res = 2.5, path = ruta_clima)
 ```
 
-## 1.4. Recortar a Costa Rica
+## 2.4. Recortar a Costa Rica
 
 ```{r}
 #| label: recorte-cr
@@ -84,7 +116,7 @@ tmin_cr <- crop(tmin_global, bbox_cr)
 vap_cr  <- crop(vap_global, bbox_cr)
 ```
 
-## 1.5.Extracción espacial hacia polígonos
+## 2.5.Extracción espacial hacia polígonos
 
 ```{r}
 #| label: cantones_vect
@@ -98,7 +130,7 @@ temp_tmin <- extract(tmin_cr, cantones_vect, fun = mean, na.rm = TRUE)
 temp_vap  <- extract(vap_cr, cantones_vect, fun = mean, na.rm = TRUE)
 ```
 
-## 1.6. Nombrar los meses
+## 2.6. Nombrar los meses
 
 ```{r}
 #| label: nom-meses
@@ -115,7 +147,7 @@ colnames(ext_vap)  <- paste0("Vap_", meses)
 
 ```
 
-## 1.7. Base de datos final-mensual
+## 2.7. Base de datos final-mensual
 
 ```{r}
 #| label: bd-final-mensual
@@ -129,25 +161,25 @@ tabla_final_mensual <- cantones |>
 
 ```
 
-## 1.8 Importar datos desde el URL (BD:tabla_final_mensual)
+## 2.8 Importar datos desde el URL (BD:tabla_final_mensual)
 
 ```{r}
 #| label: import-raw
 
 # Datos desde el RAW en GitHub
 
-url_datos <- "https://raw.githubusercontent.com/dani10movister-bot/tarea-02/refs/heads/main/clima_costa_rica_mensual.csv"
-datos_crudos <- read_csv(url_datos)
+url_datos <- "https://raw.githubusercontent.com/dani10movister-bot/tarea-03/refs/heads/main/clima_costa_rica_mensual.csv"
+datos_crudos <- read_csv(url_datos, show_col_types = FALSE)
 ```
 
-## Transformación de datos y estimación de variables termodinámicas
+## 2.9. Transformación de datos y estimación de variables termodinámicas
 
 ```{r}
 #| label: transformacion-tidy
 #| message: false
 #| warning: false
 
-# Transformación y limpieza de datos (Tidy Data)
+# Transformación y limpieza de datos 
 datos_calor <- datos_crudos |>
 
 # Pasar de 12 columnas mensuales a filas, separando la variable del mes
@@ -170,18 +202,19 @@ datos_calor <- datos_crudos |>
     
 ```
 
-# 2. Análisis Territorial del IC
+# 3. Análisis Territorial del IC
 
 El estrés térmico requiere un análisis que combine la dimensión temporal **(¿cuándo es más peligroso?)** y la dimensión territorial **(¿dónde es más peligroso?)**. A continuación, se presentan visualizaciones interactivas para responder ambas preguntas.
 
-## 2.1 Evolución Temporal
+## 3.1 Evolución Temporal
 
 Para identificar la ventana temporal de mayor vulnerabilidad, se agrupan los datos por mes y se calcula el Índice de Calor promedio a nivel nacional.
 
-## 2.1.1. Evolución Mensual del Índice de Calor: Meses Críticos de calor en Costa Rica
+## 3.1.1. Evolución mensual del Índice de Calor: meses críticos de calor en Costa Rica
 
 ```{r}
-#| label: grafico-evolucion-mensual
+#| label: fig-grafico-evolucion-mensual
+#| fig-cap: "Evolución Mensual del Índice de Calor (Promedio Nacional)"
 #| message: false
 #| warning: false
 
@@ -209,14 +242,13 @@ ggplotly(g_lineas, tooltip = c("x", "y", "text"))
 
 ```
 
-Figura 1....
+Tal y como se observa en el @fig-grafico-evolucion-mensual, los meses de más peligro en Costa Rica para los colaboradores , principalmente los que trabajan en exteriores de acuerdo a los datos promedio de Evolución mensual de calor,los meses de marzo, abril y mayo son los meses más calientes, siendo abril el mes con la sensación térmica más extrema.
 
-Tal y como se observa en el gráfico 1, los meses de más peligro en Costa Rica para los colaboradores , principalmente los que trabajan en exteriores de acuerdo a la Evolución mensual de calor son los meses de marzo, abril y mayo, siendo abril el el mes con el Indice de calor (IC) más extremo.
-
-## 2.1.2. Dimensión territorial: Provincia más vulnerable según el ÍC
+## 3.1.2. Dimensión territorial: provincia más vulnerable según el IC
 
 ```{r}
-#| label: grafico-provincias
+#| label: fig-grafico-provincias
+#| fig-cap: "Índice de calor promedio anual por provincia"
 #| message: false
 #| warning: false
 
@@ -234,7 +266,7 @@ g_barras <- ggplot(resumen_provincia, aes(x = Indice_Anual, y = provincia, fill 
   geom_col() +
   scale_fill_viridis_c(option = "magma", direction = -1) +
   labs(
-    title = "Índice de Calor Promedio por Provincia",
+    title = "Índice de calor promedio anual por provincia",
     x = "Índice de Calor (°C)",
     y = ""
   ) +
@@ -246,11 +278,9 @@ ggplotly(g_barras, tooltip = c("x", "y"))
 
 ```
 
-Gráfico 2.....
+El análisis territorial por provincias del @fig-grafico-provincias permite observar que las regiones costeras y de bajura, particularmente en el Pacífico, concentran las condiciones termodinámicas más extremas, siendo Guanacaste la región más expuesta al peligro por exposición al calor. Lo cual coincide con el estudio realizado por la Caja Costarricense de Seguro Social.
 
-El análisis territorial por provincias del Gráfico 2 permite observar que las regiones costeras y de bajura, particularmente en el Pacífico, concentran las condiciones termodinámicas más extremas, siendo Guanacaste la región más expuesta al peligro por exposición al calor.
-
-## 2.1.3. Relación Termodinámica (Temperatura vs. Humedad)
+## 3.1.3. Relación Termodinámica (Temperatura vs. Humedad)
 
 Considerando que los umbrales oficiales de la OSHA (Administración de Seguridad y Salud Ocupacional), dictan que los colores cambian en los siguientes valores de Nivel de Riesgo de acuerdo al Índice de Calor:
 
@@ -262,7 +292,7 @@ Considerando que los umbrales oficiales de la OSHA (Administración de Seguridad
 
 - Nivel IV (Rojo): Mayor a 46.1 °C (Peligro extremo).
 
-## 2.1.3.1. Asignación de Nivel de Riesgo del IC
+## 3.1.3.1. Asignación de Nivel de Riesgo del IC
 
 ```{r}
 #| label: transformacion-tidy-2
@@ -299,11 +329,13 @@ datos_calor <- datos_crudos |>
   )
 ```
 
-## 2.1.3.1. Identificación del Nivel de Riesgo en un gráfico de dispersión
+## 3.1.3.1. Identificación del Nivel de Riesgo en un gráfico de dispersión
+
+Este gráfico permitirá identificar el nivel de riesgo de todos los cantones del país, de acuerdo a los Niveles de Riesgo (OSHA) recomendados por el CSO.
 
 ```{r}
 #| label: fig-grafico-dispersion
-#| fig-cap: "Relacion termodinámica"
+#| fig-cap: "Relación Termodinámica y Niveles de Riesgo (OSHA)"
 #| message: false
 #| warning: false
 
@@ -339,16 +371,15 @@ ggplotly(g_dispersion, tooltip = c("text", "x", "y"))
 
 ```
 
-En @fig-grafico-dispersion
+## 3.1.4. Zonas de Intervención Prioritaria
 
-## 2.1.4. Zonas de Intervención Prioritaria
-
-A continuación, se muestran los 15 cantones del país con más alto riesgo de estrés térmico por calor, y por tanto posiblemente vulnerables a la ERCnt.
+A continuación, se muestran los 15 cantones del país con más alto riesgo a estrés térmico por calor, y por tanto posiblemente vulnerables a la ERCnt.
 
 La siguiente tabla interactiva detalla los cantones donde la inspección y aplicación de los umbrales de seguridad establecidos por el CSO debe ser de carácter obligatorio, para velar por la salud de los colaboradores.
 
 ```{r}
-#| label: tabla-cantones-prioritarios
+#| label: fig-tabla-cantones-prioritarios
+#| fig-cap: "Cantones del país con más alto riesgo a estrés térmico por calor"
 #| message: false
 #| warning: false
 
@@ -384,3 +415,248 @@ datatable(
   rownames = FALSE
 )
 ```
+
+Tal como se aprecia en la @fig-tabla-cantones-prioritarios, se corrobora de nuevo que los cantones de la provincia de Guanacaste son de los más afectados, siendo Carrillo, Nicoya, Santa Cruz y Nandayure los primeros lugares de acuerdo al índice de calor con valores entre los 43 y 44°C.
+
+# 4. Datos geoespaciales
+
+## 4.1. Cálculo de IC diurno (ajuste de datos de las tablas)
+
+```{r}
+#| label: preparacion-tablas
+#| message: false
+#| warning: false
+
+# Cálculo termodinámico (usando Tmax para riesgo diurno)
+datos_clima <- read_csv("https://raw.githubusercontent.com/dani10movister-bot/tarea-03/refs/heads/main/clima_costa_rica_mensual.csv", show_col_types = FALSE) |>
+  pivot_longer(
+    cols = -c(provincia, canton),
+    names_to = c(".value", "Mes"),
+    names_sep = "_"
+  ) |>
+  filter(!is.na(Tmax) & !is.na(Vap)) |>
+  mutate(
+    T_Med = (Tmax + Tmin) / 2,
+    es = 0.6108 * exp((17.27 * T_Med) / (T_Med + 237.3)),
+    Humedad = (Vap / es) * 100,
+    Humedad = ifelse(Humedad > 100, 100, Humedad), 
+    Indice_Calor = heat.index(t = Tmax, rh = Humedad, temperature.metric = "celsius", output.metric = "celsius", round = 1)
+  )
+
+```
+
+## 4.2. Resumen del IC máximo por cantón
+
+```{r}
+#| label: preparacion-tablas-2
+#| message: false
+#| warning: false
+
+# IC máximo por cantón
+resumen_canton <- datos_clima |>
+  group_by(canton) |>
+  summarize(
+    Indice_Maximo = max(Indice_Calor, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    Nivel_Riesgo = cut(
+      Indice_Maximo,
+      breaks = c(-Inf, 32.8, 39.4, 46.1, Inf),
+      labels = c("Nivel I (Verde)", "Nivel II (Amarillo)", "Nivel III (Naranja)", "Nivel IV (Rojo)"),
+      right = FALSE
+    )
+  )
+```
+
+## 4.3. Unión Espacial
+
+Para cumplir con la unión espacial, se vincula la información climática (procesada tabularmente) con la división territorial cartográfica. Para esto, se ejecuta una unión tabular mediante la función `left_join()`.
+
+Se utiliza el objeto espacial (`cantones`) a la izquierda para garantizar que el resultado herede la geometría (`sf`) y no se degrade a un marco de datos. La llave de unión seleccionada es la columna nominal `canton`.
+
+```{r}
+#| label: union-espacial
+#| message: false
+#| warning: false
+
+# Unión de la capa vectorial con el resumen del Índice de Calor
+mapa_riesgo <- cantones |>
+  left_join(resumen_canton, by = "canton")
+
+# Comprobar entidades sin coincidencias
+cantones_sin_datos <- cantones |>
+  anti_join(resumen_canton, by = "canton")
+```
+
+# 5. Visualización Espacial del Riesgo Térmico
+
+Para visualizar la distribución espacial del riesgo térmico diurno a nivel nacional, se elabora un mapa de coropletas. Aunque la base de datos espacial fue transformada a WGS84 para compatibilidad web, el renderizado de este mapa estático se reproyecta al vuelo utilizando coord_sf(crs = 8908), aplicando el sistema oficial CRTM05 para minimizar la distorsión territorial de Costa Rica.
+
+## 5.1. Mapa temático estático
+
+```{r}
+#| label: fig-mapa-estatico-ggplot
+#| fig-cap: "Mapa de distribución territorial del riesgo máximo de estrés térmico en Costa Rica."
+#| message: false
+#| warning: false
+
+
+colores_mapa <- c(
+  "Nivel I (Verde)" = "#9bc86e",
+  "Nivel II (Amarillo)" = "#fcf27c",
+  "Nivel III (Naranja)" = "#eb7f35",
+  "Nivel IV (Rojo)" = "#e33224"
+)
+
+mapa_estatico <- ggplot(data = mapa_riesgo) +
+  geom_sf(aes(fill = Nivel_Riesgo), color = "black", linewidth = 0.1) +
+  scale_fill_manual(
+    values = colores_mapa, 
+    na.value = "gray80", 
+    name = "Nivel de Riesgo (OSHA)"
+  ) +
+  coord_sf(crs = 8908) +
+  labs(
+    title = "Riesgo de Estrés Térmico Ocupacional por Cantón",
+    subtitle = "Basado en el Índice de Calor máximo anual diurno (Tmax)",
+    caption = "Fuente: Datos procesados de WorldClim (2020) y cartografía del IGN."
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+
+mapa_estatico
+```
+
+Al analizar el @fig-mapa-estatico-ggplot, se evidencia un claro patrón ligado a la altitud y la dinámica climática del país. Las regiones montañosas y los cantones del Valle Central se mantienen mayoritariamente en el Nivel I (verde), indicando un riesgo de precaución básica. En contraste, las zonas costeras y de bajura, particularmente toda la Región Chorotega (Guanacaste) y el litoral Pacífico, se ubican en el Nivel III (Naranja - Peligro) durante las jornadas diurnas.
+
+## 5.2. Mapa interactivo (Leaflet)
+
+Para complementar el análisis estático, se presenta un mapa web interactivo en proyección WGS84, lo que permite la navegación fluida e inspección individual de los atributos de cada cantón.
+
+## 5.2.1. Selección de color (Nivel de Riesgo IC)
+
+```{r}
+#| label: mapa-colores
+#| message: false
+#| warning: false
+
+# Paleta de colores para Leaflet 
+paleta_riesgo <- colorFactor(
+  palette = c("#9bc86e", "#fcf27c", "#eb7f35", "#e33224"), 
+  domain = mapa_riesgo$Nivel_Riesgo
+)
+```
+
+## 5.2.2. Configuración de etiquetas emergentes
+
+```{r}
+#| label: mapa-etiquetas
+#| message: false
+#| warning: false
+
+etiquetas <- paste0(
+  "<strong>Cantón: </strong>", mapa_riesgo$canton, "<br>",
+  "<strong>Índice Máximo: </strong>", mapa_riesgo$Indice_Maximo, " °C<br>",
+  "<strong>Riesgo OSHA: </strong>", mapa_riesgo$Nivel_Riesgo
+) |> lapply(htmltools::HTML)
+```
+
+## 5.2.3. Mapa Interactivo
+
+```{r}
+#| label: fig-mapa-interactivo-leaflet
+#| fig-cap: "Mapa de distribución territorial interactiva del riesgo máximo de estrés térmico en Costa Rica."
+#| message: false
+#| warning: false
+
+# Renderizar el mapa
+leaflet() |>
+
+  # Mapa base 
+    addProviderTiles(providers$OpenStreetMap, group = "OpenStreetMap") |>
+  addProviderTiles(providers$Esri.WorldImagery, group = "Esri Satélite") |>
+  
+  # Capa temática (Polígonos)
+  addPolygons(
+    data = mapa_riesgo,
+    fillColor = ~paleta_riesgo(Nivel_Riesgo),
+    fillOpacity = 0.8,
+    color = "black", # Borde de los cantones
+    weight = 1,
+    label = etiquetas,
+    group = "Riesgo Térmico"
+  ) |>
+  
+  # Leyenda
+  addLegend(
+    position = "bottomright",
+    pal = paleta_riesgo,
+    values = mapa_riesgo$Nivel_Riesgo,
+    title = "Niveles OSHA",
+    opacity = 1
+  ) |>
+  
+  # Control de capas
+  addLayersControl(
+    baseGroups = c("OpenStreetMap)", "Esri Satélite"),
+    overlayGroups = c("Riesgo Térmico"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) |>
+  
+  # Barra de escala métrica
+  addScaleBar(position = "bottomleft", options = scaleBarOptions(imperial = FALSE))
+```
+
+A través led mapa interactivo @fig-mapa-interactivo-leaflet, es posible aislar regiones específicas y confirmar visualmente que el Nivel III (Naranja) domina la costa pacífica. El control de capas permite activar la vista satelital (Esri Satélite), lo que evidencia cómo el riesgo de estrés térmico coincide geográficamente con las llanuras deforestadas y de vocación agrícola intensiva (como el cultivo de caña de azúcar en Guanacaste), reforzando la correlación entre la exposición ambiental y la aparición de la ERCnT en trabajadores de campo.
+
+# 6. Conclusiones y Limitaciones
+
+## 6.1. Conclusiones
+
+A partir del procesamiento de datos climáticos y cartográficos, y las interrogantes planteadas en la introducción, se concluye lo siguiente:
+
+  1. Los meses con mayor exposición al estrés térmico en Costa Rica corresponden al trimestre de **marzo, abril y mayo**, siendo abril el mes más crítico. Durante este periodo, las medidas de prevención ocupacional deben intensificarse.
+  
+2. A nivel nacional, **Guanacaste es la provincia con la mayor exposición sostenida al calor**, lo cual coincide espacial y temporalmente con la alta prevalencia de la Enfermedad Renal Crónica de origen no tradicional (ERCnT) documentada por la CCSS en la Región Chorotega.
+
+3. **La distribución del Índice de Calor se encuentra fuertemente ligada a la altitud**. Mientras los cantones del Valle Central y las cordilleras se mantienen en el Nivel I (Verde - Precaución), las zonas costeras superan los umbrales de seguridad.
+
+4. **Los 15 cantones más afectados se concentran en las llanuras del Pacífico**, liderados por Carrillo, Nicoya, Santa Cruz y Nandayure. En estos territorios, el acatamiento de las directrices de hidratación, sombra y descanso del Consejo de Salud Ocupacional (CSO) debe ser de carácter obligatorio y sujeto a estricta inspección.
+
+5. Al evaluar el riesgo máximo durante las jornadas laborales diurnas (mediante la temperatura máxima), el análisis espacial cartográfico demuestra que el Nivel III (Naranja - Peligro) se concentra en el litoral Pacífico y la Región Chorotega. Geográficamente, estas áreas coinciden con vastas extensiones de producción agrícola intensiva (como la caña de azúcar), donde los colaboradores realizan trabajo físico extenuante a la intemperie, **validando la hipótesis de la correlación ambiental-ocupacional de la ERCnt**.
+
+## 6.2. Limitaciones del estudio
+
+Es importante reconocer las limitaciones metodológicas de este análisis. En primer lugar, los datos geoespaciales utilizados (WorldClim) corresponden a una climatología histórica mensual (1970-2000), por lo que no capturan anomalías térmicas recientes, olas de calor extremas actuales o el impacto agudo del cambio climático en los últimos 20 años. 
+
+En segundo lugar, al promediar los datos a nivel cantonal, se omite la existencia de microclimas dentro de un mismo cantón, lo que significa que trabajadores en zonas geográficamente específicas podrían estar sometidos a condiciones de Nivel IV (Peligro Extremo) que el promedio cantonal diluye. 
+
+Finalmente, la humedad relativa fue estimada a partir de la presión de vapor mediante fórmulas termodinámicas estandarizadas, lo cual es una aproximación robusta pero carece de la precisión absoluta de mediciones higrométricas directas en campo.
+
+
+# 7. Referencias Bibliográficas
+
+<style>
+.sangria-francesa p {
+  padding-left: 36px;
+  text-indent: -36px;
+  margin-bottom: 1em;
+}
+</style>
+
+::: {.sangria-francesa}
+
+Caja Costarricense de Seguro Social. (2014). *Factores asociados a enfermedad renal crónica, Región Chorotega: Informe final de resultados*. Ministerio de Salud de Costa Rica. <https://www.ministeriodesalud.go.cr/index.php/biblioteca-de-archivos-left/documentos-ministerio-de-salud/tecno-ciencia/inventario-de-enfermedad-renal-cronica-no-tradicional-ercnt/estudios-de-ercnt-situacion-de-la-problematica-en-costa-rica/9654-factores-asociados-a-enfermedad-renal-cronica-region-chorotega-ccss/file>
+
+Organización Meteorológica Mundial. (s.f.). *Guía de instrumentos y métodos de observación, volumen I – Medición de variables meteorológicas* (OMM-N° 8). <https://library.wmo.int/viewer/68714/?offset=#page=1&viewer=picture&o=bookmark&n=0&q=>
+
+Presidencia de la República, Ministerio de Salud, & Ministerio de Trabajo y Seguridad Social. (2015, 23 de septiembre). Decreto Ejecutivo Nº 39147-S-TSS: Reglamento para la contratación de servicios de medicina del trabajo y seguridad e higiene en el trabajo. *La Gaceta*, (185), Alcance 75. <http://www.pgrweb.go.cr/scij/Busqueda/Normativa/Normas/nrm_texto_completo.aspx?param1=NRTC&nValor1=1&nValor2=80290>
+
+Wesseling, C., Glaser, J., Rodríguez-Guzmán, J., Weiss, I., Lucas, R., Peraza, S., Soares da Silva, A., Hansson, E., Johnson, R. J., Hogstedt, C., Wegman, D. H., & Jakobsson, K. (2020). Chronic kidney disease of non-traditional origin in Mesoamerica: a disease primarily driven by occupational heat stress. *Revista Panamericana de Salud Pública, 44*, e54. <https://iris.paho.org/handle/10665.2/51826>
+
+:::
+
+# 8. Declaración de uso de IA
+Para el desarrollo de esta tarea se utilizó el asistente de inteligencia artificial Gemini (Google) como apoyo al aprendizaje, explicar mensajes de error, desarrollo del código y dar formato APA 7 a las referencias, cumpliendo con los lineamientos del curso. Los resultados fueron revisados, verificados y adaptados por la persona autora.
+
