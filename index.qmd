@@ -51,7 +51,7 @@ Esta capa geoespacial corresponde a los cantones del país, generada oficialment
 
 4.  ¿Cuáles son los 15 cantones más afectados a nivel nacional?
 
-5.  Ante esta problemática de salud ocupacional, se plantea la siguiente interrogante espacial: ¿En cuáles cantones de Costa Rica se concentran los niveles de riesgo de estrés térmico más severos (Niveles III y IV, según la categorización de la OSHA) durante las jornadas laborales diurnas?\*
+5.  Ante esta problemática de salud ocupacional, se plantea la siguiente interrogante espacial: ¿En cuáles cantones de Costa Rica se concentran los niveles de riesgo de estrés térmico más severos (Niveles III y IV, según la categorización de la OSHA) durante las jornadas laborales diurnas?
 
 # 2. Importación y preparación de los datos
 
